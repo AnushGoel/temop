@@ -44,8 +44,8 @@ st.markdown(
 # ---------------------------
 def ensure_date_column(df):
     """
-    Ensure the DataFrame has a 'Date' column in datetime format.
-    If not, rename the first column to 'Date' and convert it.
+    Ensure that the DataFrame has a 'Date' column in datetime format.
+    If the reset index column is not named 'Date', rename the first column to 'Date'.
     """
     if 'Date' not in df.columns:
         df = df.rename(columns={df.columns[0]: 'Date'})
@@ -223,7 +223,8 @@ def chart_candlestick(data, ticker):
 
 def chart_forecast_overlay(data, forecast, ticker):
     """
-    Create a forecast overlay chart and return the forecast table.
+    Create a forecast overlay chart and display a forecast table.
+    Returns the forecast table as a DataFrame.
     """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
@@ -398,7 +399,7 @@ if ticker:
                 forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_days)
                 st.write(f"Forecast for the next {forecast_days} day(s):")
                 st.write(forecast_values)
-                # Use the forecast overlay function to display the chart and table
+                # Use chart_forecast_overlay to display the overlay chart and obtain the forecast table
                 df_forecast = chart_forecast_overlay(data, forecast_values, ticker)
                 last_actual = float(data['Close'].iloc[-1])
                 avg_forecast = np.mean(forecast_values)

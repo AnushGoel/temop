@@ -32,7 +32,6 @@ def get_conversion_rate(to_currency):
             rate = c.get_rate("USD", to_currency)
             return rate
     except Exception:
-        # If error, default to 1.0 (i.e. USD)
         return 1.0
 
 # Currency symbols mapping
@@ -61,7 +60,6 @@ st.markdown(
 # Helper Functions
 # ---------------------------
 def get_company_info(ticker):
-    """Retrieve company name and description."""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -72,7 +70,6 @@ def get_company_info(ticker):
         return ticker, "No description available."
 
 def get_sentiment_from_news(ticker):
-    """Calculate an aggregated sentiment score from recent news using VADER."""
     stock = yf.Ticker(ticker)
     news = stock.news
     sentiments = []
@@ -83,7 +80,6 @@ def get_sentiment_from_news(ticker):
     return float(np.mean(sentiments)) if sentiments else 0.0
 
 def get_news_impact(ticker):
-    """Return a short message on the likely impact of news on the stock price."""
     sentiment = get_sentiment_from_news(ticker)
     if sentiment > 0.1:
         return f"News appears generally positive (avg sentiment {sentiment:.2f}); this may push prices higher."
@@ -93,7 +89,6 @@ def get_news_impact(ticker):
         return f"News sentiment is neutral (avg sentiment {sentiment:.2f}); expect little immediate impact."
 
 def get_historical_data(ticker, start_date, end_date, interval="1d"):
-    """Retrieve historical data using yfinance (daily data only)."""
     data = yf.download(ticker, start=start_date, end=end_date, interval=interval)
     return data
 
@@ -101,7 +96,6 @@ def get_historical_data(ticker, start_date, end_date, interval="1d"):
 # LSTM Model Functions
 # ---------------------------
 def prepare_data(data, sequence_length):
-    """Prepare data for LSTM training."""
     dataset = data['Close'].values.reshape(-1, 1)
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(dataset)
@@ -114,7 +108,6 @@ def prepare_data(data, sequence_length):
     return X, y, scaler, scaled_data
 
 def build_lstm_model(input_shape):
-    """Build and compile the LSTM model."""
     model = Sequential()
     model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
     model.add(LSTM(50))
@@ -123,7 +116,6 @@ def build_lstm_model(input_shape):
     return model
 
 def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon):
-    """Forecast future prices using the trained LSTM model."""
     forecast = []
     last_sequence = data_scaled[-sequence_length:]
     current_sequence = last_sequence.copy()
@@ -139,10 +131,6 @@ def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon)
 # Investment Recommendation
 # ---------------------------
 def get_investment_recommendation(last_actual, forecast_df, threshold=3):
-    """
-    Scan the forecast dataframe for the first date on which the forecasted price exceeds
-    last_actual by the threshold (percent) and recommend that date.
-    """
     recommended_date = None
     for idx, row in forecast_df.iterrows():
         if row['Forecasted Price'] > last_actual * (1 + threshold/100):
@@ -157,7 +145,6 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
 # Altair Chart Functions
 # ---------------------------
 def chart_historical_line(data, ticker, curr_symbol):
-    """Line Chart for Historical Closing Prices."""
     df = data.reset_index()
     chart = alt.Chart(df).mark_line(color="#2e7bcf").encode(
         x=alt.X('Date:T', title='Date'),
@@ -170,7 +157,6 @@ def chart_historical_line(data, ticker, curr_symbol):
     st.altair_chart(chart, use_container_width=True)
 
 def chart_technical_indicators(data, ticker, curr_symbol):
-    """Line Chart for Technical Indicators (SMA & EMA)."""
     df = data.copy().reset_index()
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
@@ -186,7 +172,6 @@ def chart_technical_indicators(data, ticker, curr_symbol):
     st.altair_chart(chart, use_container_width=True)
 
 def chart_candlestick(data, ticker, curr_symbol):
-    """Candlestick Chart."""
     df = data.reset_index()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
     rule = base.mark_rule().encode(
@@ -206,10 +191,6 @@ def chart_candlestick(data, ticker, curr_symbol):
     st.altair_chart(chart, use_container_width=True)
 
 def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
-    """
-    Overlay chart of historical data and forecast.
-    Also displays a forecast table.
-    """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
     df_hist = data.reset_index()[['Date', 'Close']]
@@ -235,12 +216,12 @@ def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
     st.altair_chart(chart, use_container_width=True)
     st.write("Forecast Table")
     st.dataframe(df_forecast)
+    return df_forecast
 
 # ---------------------------
 # Fundamental Info Display
 # ---------------------------
 def display_fundamentals(ticker, conv_factor, curr_symbol):
-    """Display key stock fundamentals in the chosen currency."""
     stock = yf.Ticker(ticker)
     info = stock.info
     fundamentals = {
@@ -304,7 +285,7 @@ st.sidebar.title("Stock Dashboard Settings")
 ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
-interval_option = "1d"  # Daily data only
+interval_option = "1d"
 forecast_period_type = st.sidebar.selectbox("Forecast Period Type", 
                                               ["Days", "Weeks", "15 Days", "Months", "6 Months", "Year"])
 number_of_periods = st.sidebar.number_input("Number of Periods", min_value=1, value=1, step=1)
@@ -312,9 +293,9 @@ total_forecast_days = number_of_periods * {
     "Days": 1,
     "Weeks": 7,
     "15 Days": 15,
-    "Months": 22,   # Approximate trading days in a month
-    "6 Months": 130, # Approximate trading days in 6 months
-    "Year": 252      # Approximate trading days in a year
+    "Months": 22,
+    "6 Months": 130,
+    "Year": 252
 }[forecast_period_type]
 currency = st.sidebar.selectbox("Select Currency", ["USD", "EUR", "GBP", "INR"])
 conv_factor = get_conversion_rate(currency)
@@ -373,9 +354,8 @@ if ticker:
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
                 chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
-                
-                # Alternative: Build forecast table inline without an extra function
-                freq = "B"  # Business days
+                # Inline forecast table construction:
+                freq = "B"
                 date_format = "%Y-%m-%d"
                 forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
                 forecast_dates = forecast_dates.strftime(date_format)

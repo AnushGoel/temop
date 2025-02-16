@@ -45,15 +45,10 @@ st.markdown(
 def ensure_date_column(df):
     """
     Ensure that the DataFrame has a 'Date' column in datetime format.
-    If 'Date' does not exist but an 'index' column does, rename it to 'Date'.
+    If 'Date' does not exist but the index is used, rename the index column to 'Date'.
     """
     if 'Date' not in df.columns:
-        if 'index' in df.columns:
-            df = df.rename(columns={'index': 'Date'})
-        else:
-            # If neither exists, use the first column as Date
-            first_col = df.columns[0]
-            df = df.rename(columns={first_col: 'Date'})
+        df = df.rename(columns={df.columns[0]: 'Date'})
     df['Date'] = pd.to_datetime(df['Date'])
     return df
 

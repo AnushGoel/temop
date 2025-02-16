@@ -69,6 +69,31 @@ def get_historical_data(ticker, start_date, end_date, interval="1d"):
     return data
 
 # ---------------------------
+# Extra Financial Analysis Functions
+# ---------------------------
+def compute_daily_returns(data):
+    data['Daily Return'] = data['Close'].pct_change()
+    avg_daily_return = data['Daily Return'].mean()
+    volatility = data['Daily Return'].std() * np.sqrt(252)  # Annualized volatility
+    return avg_daily_return, volatility
+
+def compute_bollinger_bands(data, window=20):
+    data['SMA'] = data['Close'].rolling(window=window).mean()
+    data['STD'] = data['Close'].rolling(window=window).std()
+    data['Upper Band'] = data['SMA'] + (2 * data['STD'])
+    data['Lower Band'] = data['SMA'] - (2 * data['STD'])
+    return data
+
+def compute_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    RS = gain / loss
+    RSI = 100 - (100 / (1 + RS))
+    data['RSI'] = RSI
+    return data
+
+# ---------------------------
 # LSTM Model Functions
 # ---------------------------
 def prepare_data(data, sequence_length):
@@ -81,7 +106,7 @@ def prepare_data(data, sequence_length):
         y.append(scaled_data[i, 0])
     X, y = np.array(X), np.array(y)
     X = np.reshape(X, (X.shape[0], X.shape[1], 1))
-    return X, y, scaler, data
+    return X, y, scaler, scaled_data
 
 def build_lstm_model(input_shape):
     model = Sequential()
@@ -115,7 +140,7 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
     if recommended_date:
         return f"Great news! Consider investing on {recommended_date}."
     else:
-        return "No significant upward trend detected. Maybe hold off for now."
+        return "No significant upward trend detected. Perhaps hold off for now."
 
 # ---------------------------
 # Altair Chart Functions
@@ -178,9 +203,35 @@ def chart_volume_bar(data, ticker):
     )
     st.altair_chart(chart, use_container_width=True)
 
+def chart_bollinger_bands(data, ticker):
+    df = data.reset_index()
+    chart = alt.Chart(df).mark_line().encode(
+        x='Date:T'
+    )
+    line_close = chart.encode(y=alt.Y('Close:Q', title='Price (USD)'), color=alt.value("black"))
+    line_upper = chart.encode(y='Upper Band:Q', color=alt.value("green"))
+    line_lower = chart.encode(y='Lower Band:Q', color=alt.value("red"))
+    combined = (line_close + line_upper + line_lower).properties(
+        title=f"{ticker} - Bollinger Bands",
+        width=700,
+        height=400
+    )
+    st.altair_chart(combined, use_container_width=True)
+
+def chart_rsi(data, ticker):
+    df = data.reset_index()
+    chart = alt.Chart(df).mark_line(color="purple").encode(
+        x=alt.X('Date:T', title='Date'),
+        y=alt.Y('RSI:Q', title='RSI')
+    ).properties(
+        title=f"{ticker} - Relative Strength Index (RSI)",
+        width=700,
+        height=300
+    )
+    st.altair_chart(chart, use_container_width=True)
+
 def chart_forecast_overlay(data, forecast, ticker):
     freq = "B"  # Business days
-    date_format = "%Y-%m-%d"
     df_hist = data.reset_index()[['Date', 'Close']]
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
     df_forecast = pd.DataFrame({
@@ -195,12 +246,12 @@ def chart_forecast_overlay(data, forecast, ticker):
         x='Date:T',
         y=alt.Y('Forecasted Price:Q', title='Price (USD)')
     )
-    chart = (chart_hist + chart_forecast).properties(
+    combined = (chart_hist + chart_forecast).properties(
         title=f"{ticker} - Forecast Overlay",
         width=700,
         height=400
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(combined, use_container_width=True)
     st.write("Forecast Table")
     st.dataframe(df_forecast)
     return df_forecast
@@ -218,7 +269,9 @@ def display_fundamentals(ticker):
         "Day's High": info.get("dayHigh"),
         "Day's Low": info.get("dayLow"),
         "Volume": info.get("volume"),
-        "Market Cap": info.get("marketCap")
+        "Market Cap": info.get("marketCap"),
+        "PE Ratio": info.get("trailingPE"),
+        "EPS": info.get("trailingEps")
     }
     df_fund = pd.DataFrame(fundamentals, index=[ticker])
     st.dataframe(df_fund)
@@ -328,6 +381,20 @@ if ticker:
     if data.empty:
         st.error("No historical data found. Please adjust your dates or ticker.")
     else:
+        # Compute extra financial metrics
+        avg_return, volatility = compute_daily_returns(data)
+        data = compute_bollinger_bands(data)
+        data = compute_rsi(data)
+        
+        st.subheader("Extra Financial Analysis")
+        st.write(f"**Average Daily Return:** {avg_return*100:.2f}%")
+        st.write(f"**Annualized Volatility:** {volatility*100:.2f}%")
+        with st.expander("Learn More About These Metrics"):
+            st.write("The average daily return indicates the typical percentage change in the closing price per day. "
+                     "Volatility, annualized using 252 trading days, gives you a sense of the stock's risk or how much "
+                     "its price varies over time. Bollinger Bands and RSI are popular technical indicators that help assess "
+                     "price trends and overbought/oversold conditions.")
+        
         # ---------------------------
         # Charts Tab
         # ---------------------------
@@ -337,6 +404,8 @@ if ticker:
             chart_technical_indicators(data, ticker)
             chart_candlestick(data, ticker)
             chart_volume_bar(data, ticker)
+            chart_bollinger_bands(data, ticker)
+            chart_rsi(data, ticker)
         
         # ---------------------------
         # Forecast Tab
@@ -346,12 +415,12 @@ if ticker:
             if len(data) < sequence_length:
                 st.error("Not enough data for the specified sequence length for forecasting.")
             else:
-                X, y, scaler, data_used = prepare_data(data, sequence_length)
+                X, y, scaler, data_scaled = prepare_data(data, sequence_length)
                 model = build_lstm_model((X.shape[1], 1))
                 with st.spinner("Training LSTM model... (this might take a moment!)"):
                     model.fit(X, y, epochs=10, batch_size=32, verbose=0)
                 st.success("Model trained! Here comes the forecast...")
-                forecast_values = forecast_lstm(model, scaler.transform(data['Close'].values.reshape(-1,1)), scaler, sequence_length, total_forecast_days)
+                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, total_forecast_days)
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
                 df_forecast = chart_forecast_overlay(data, forecast_values, ticker)
@@ -364,12 +433,12 @@ if ticker:
                 # Prediction Summary
                 predicted_growth = ((forecast_values[-1] - last_actual) / last_actual) * 100
                 st.metric(label="Predicted Growth (%)", value=f"{predicted_growth:.2f}%")
-                with st.expander("Prediction Summary"):
-                    if predicted_growth > 0:
-                        st.success("The future looks bright! It might be a good time to invest.")
-                    else:
-                        st.error("The forecast suggests caution. It may be wise to wait.")
-                    st.write("Remember: This forecast is for fun and based on historical data. Always do your own research!")
+                with st.expander("Forecast & Historical Insights"):
+                    st.write(f"The forecast suggests a price change of {predicted_growth:.2f}% over the next {total_forecast_days} day(s).")
+                    st.write("When compared to the historical average daily return and the observed volatility, "
+                             "this forecast can help guide your investment timing. Keep in mind that markets are dynamic, "
+                             "and these predictions are based on historical trends and a basic LSTM model. Always conduct "
+                             "your own research!")
         
         # ---------------------------
         # Fundamentals Tab

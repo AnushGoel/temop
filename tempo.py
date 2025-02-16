@@ -159,7 +159,12 @@ def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon)
 # ----- Recommendation Function -----
 
 def get_investment_recommendation(last_actual, final_forecast):
-    """Provide a simple recommendation based on percentage change."""
+    """
+    Provide a simple recommendation based on percentage change.
+    Ensure inputs are floats.
+    """
+    last_actual = float(last_actual)
+    final_forecast = float(final_forecast)
     percentage_change = (final_forecast - last_actual) / last_actual * 100
     if percentage_change > 3:
         return "Based on the forecast, it is highly recommended to invest."
@@ -240,8 +245,8 @@ if ticker:
             plot_forecast(data, forecast_values, ticker, interval_option)
             
             # Investment Recommendation
-            last_actual = data['Close'].iloc[-1]
-            final_forecast = forecast_values[-1]
+            last_actual = float(data['Close'].iloc[-1])
+            final_forecast = float(forecast_values[-1])
             recommendation = get_investment_recommendation(last_actual, final_forecast)
             st.write("### Investment Recommendation")
             st.write(recommendation)

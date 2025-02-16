@@ -354,6 +354,7 @@ if ticker:
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
                 chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
+                
                 # Inline forecast table construction:
                 freq = "B"
                 date_format = "%Y-%m-%d"

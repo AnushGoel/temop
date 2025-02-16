@@ -4,6 +4,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import altair as alt
+import random
 
 # TensorFlow & Keras for LSTM model
 import tensorflow as tf
@@ -190,6 +191,18 @@ def chart_candlestick(data, ticker, curr_symbol):
     )
     st.altair_chart(chart, use_container_width=True)
 
+def chart_volume_bar(data, ticker, curr_symbol):
+    df = data.reset_index()
+    chart = alt.Chart(df).mark_bar(color="grey").encode(
+        x=alt.X('Date:T', title='Date'),
+        y=alt.Y('Volume:Q', title='Volume')
+    ).properties(
+        title=f"{ticker} - Trading Volume",
+        width=700,
+        height=300
+    )
+    st.altair_chart(chart, use_container_width=True)
+
 def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
@@ -282,7 +295,17 @@ def process_chat(query):
 # Sidebar Inputs and Tabs Setup
 # ---------------------------
 st.sidebar.title("Stock Dashboard Settings")
-ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
+
+# Use a key to allow the "Surprise Me" button to update the ticker input
+if "ticker_input" not in st.session_state:
+    st.session_state["ticker_input"] = "AAPL"
+
+ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", st.session_state["ticker_input"], key="ticker_input").upper().strip()
+if st.sidebar.button("Surprise Me"):
+    surprise_ticker = random.choice(["AAPL", "MSFT", "TSLA", "AMZN", "GOOGL", "NFLX", "NVDA"])
+    st.session_state["ticker_input"] = surprise_ticker
+    ticker = surprise_ticker
+
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
 interval_option = "1d"
@@ -312,6 +335,18 @@ if ticker:
         comp_name, comp_desc = get_company_info(ticker)
         st.subheader(comp_name)
         st.write(comp_desc)
+        # More interactive company info
+        with st.expander("More Company Info"):
+            try:
+                stock_info = yf.Ticker(ticker).info
+                st.write(f"**Sector:** {stock_info.get('sector', 'N/A')}")
+                st.write(f"**Industry:** {stock_info.get('industry', 'N/A')}")
+                st.write(f"**Country:** {stock_info.get('country', 'N/A')}")
+                st.write(f"**CEO:** {stock_info.get('ceo', 'N/A')}")
+                st.write(f"**Website:** {stock_info.get('website', 'N/A')}")
+            except Exception:
+                st.write("Additional company information not available.")
+                
         sentiment = get_sentiment_from_news(ticker)
         st.metric(label="News Sentiment Score", value=f"{sentiment:.2f}")
         news_impact = get_news_impact(ticker)
@@ -337,6 +372,7 @@ if ticker:
             chart_historical_line(data, ticker, curr_symbol)
             chart_technical_indicators(data, ticker, curr_symbol)
             chart_candlestick(data, ticker, curr_symbol)
+            chart_volume_bar(data, ticker, curr_symbol)
         
         # ---------------------------
         # Forecast Tab
@@ -353,23 +389,22 @@ if ticker:
                 forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, total_forecast_days)
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
-                chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
+                df_forecast = chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
                 
-                # Inline forecast table construction:
-                freq = "B"
-                date_format = "%Y-%m-%d"
-                forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
-                forecast_dates = forecast_dates.strftime(date_format)
-                df_forecast = pd.DataFrame({
-                    'Date': forecast_dates,
-                    'Forecasted Price': forecast_values
-                })
-                st.write("Forecast Table")
-                st.dataframe(df_forecast)
                 last_actual = float(data['Close'].iloc[-1])
                 recommendation = get_investment_recommendation(last_actual, df_forecast)
                 st.write("Investment Recommendation:")
                 st.info(recommendation)
+                
+                # Prediction Summary for Investment Guide
+                predicted_growth = ((forecast_values[-1] - last_actual) / last_actual) * 100
+                st.metric(label="Predicted Growth (%)", value=f"{predicted_growth:.2f}%")
+                with st.expander("Prediction Summary"):
+                    if predicted_growth > 0:
+                        st.success("The model predicts an upward trend based on the forecasted closing prices. This could be a good time to consider investing.")
+                    else:
+                        st.error("The model predicts a downward trend based on the forecasted closing prices. Caution is advised before investing.")
+                    st.write("Please note that these predictions are based on historical data and a basic LSTM model. Always perform your own research or consult a financial advisor before making any investment decisions.")
         
         # ---------------------------
         # Fundamentals Tab

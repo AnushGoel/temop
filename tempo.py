@@ -45,7 +45,7 @@ st.markdown(
 def ensure_date_column(df):
     """
     Ensure that the DataFrame has a 'Date' column in datetime format.
-    If 'Date' does not exist but the index is used, rename the index column to 'Date'.
+    If the reset index column is not named "Date", rename the first column.
     """
     if 'Date' not in df.columns:
         df = df.rename(columns={df.columns[0]: 'Date'})
@@ -223,7 +223,7 @@ def chart_candlestick(data, ticker):
 
 def chart_forecast_overlay(data, forecast, ticker):
     """
-    Create a forecast overlay chart and display a forecast table.
+    Create a forecast overlay chart and return the forecast table.
     """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"

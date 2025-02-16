@@ -151,12 +151,17 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
 # ---------------------------
 # Altair Chart Functions
 # ---------------------------
+def ensure_date_column(df):
+    """Ensure that the DataFrame has a 'Date' column in datetime format."""
+    if 'Date' not in df.columns:
+        df = df.rename(columns={df.columns[0]: 'Date'})
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
 def chart_historical_line(data, ticker):
     """Line Chart for Historical Closing Prices."""
     df = data.reset_index()
-    df['Date'] = pd.to_datetime(df['index'])  # Ensure Date is datetime; using 'index' if reset_index() didn't rename automatically
-    if 'Date' not in df.columns:
-        df.rename(columns={'index': 'Date'}, inplace=True)
+    df = ensure_date_column(df)
     chart = alt.Chart(df).mark_line(color="#2e7bcf").encode(
         x=alt.X('Date:T', title='Date'),
         y=alt.Y('Close:Q', title='Close Price ($)', format=",.2f")
@@ -170,9 +175,7 @@ def chart_historical_line(data, ticker):
 def chart_technical_indicators(data, ticker):
     """Line Chart for Technical Indicators (SMA & EMA)."""
     df = data.copy().reset_index()
-    df['Date'] = pd.to_datetime(df['index'])
-    if 'Date' not in df.columns:
-        df.rename(columns={'index': 'Date'}, inplace=True)
+    df = ensure_date_column(df)
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
@@ -189,9 +192,7 @@ def chart_technical_indicators(data, ticker):
 def chart_candlestick(data, ticker):
     """Candlestick Chart."""
     df = data.reset_index()
-    df['Date'] = pd.to_datetime(df['index'])
-    if 'Date' not in df.columns:
-        df.rename(columns={'index': 'Date'}, inplace=True)
+    df = ensure_date_column(df)
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
     rule = base.mark_rule().encode(
         y='Low:Q',
@@ -211,13 +212,13 @@ def chart_candlestick(data, ticker):
 
 def chart_forecast_overlay(data, forecast, ticker):
     """
-    Create a forecast overlay chart and return a forecast table.
+    Create a forecast overlay chart and display a forecast table.
     """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
     df_hist = data.reset_index()[['index', 'Close']]
-    df_hist.rename(columns={'index': 'Date'}, inplace=True)
-    df_hist['Date'] = pd.to_datetime(df_hist['Date'])
+    df_hist = df_hist.rename(columns={'index': 'Date'})
+    df_hist = ensure_date_column(df_hist)
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
     forecast_dates = forecast_dates.strftime(date_format)
     df_forecast = pd.DataFrame({

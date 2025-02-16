@@ -83,7 +83,6 @@ def get_latest_news(ticker, count=3):
     if news and isinstance(news, list):
         for item in news[:count]:
             title = item.get('title', 'No title')
-            # Some items may have "link" or "url"
             url = item.get('link') or item.get('url') or "#"
             news_items.append((title, url))
     return news_items
@@ -155,6 +154,9 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
 def chart_historical_line(data, ticker):
     """Line Chart for Historical Closing Prices."""
     df = data.reset_index()
+    df['Date'] = pd.to_datetime(df['index'])  # Ensure Date is datetime; using 'index' if reset_index() didn't rename automatically
+    if 'Date' not in df.columns:
+        df.rename(columns={'index': 'Date'}, inplace=True)
     chart = alt.Chart(df).mark_line(color="#2e7bcf").encode(
         x=alt.X('Date:T', title='Date'),
         y=alt.Y('Close:Q', title='Close Price ($)', format=",.2f")
@@ -168,6 +170,9 @@ def chart_historical_line(data, ticker):
 def chart_technical_indicators(data, ticker):
     """Line Chart for Technical Indicators (SMA & EMA)."""
     df = data.copy().reset_index()
+    df['Date'] = pd.to_datetime(df['index'])
+    if 'Date' not in df.columns:
+        df.rename(columns={'index': 'Date'}, inplace=True)
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
@@ -184,6 +189,9 @@ def chart_technical_indicators(data, ticker):
 def chart_candlestick(data, ticker):
     """Candlestick Chart."""
     df = data.reset_index()
+    df['Date'] = pd.to_datetime(df['index'])
+    if 'Date' not in df.columns:
+        df.rename(columns={'index': 'Date'}, inplace=True)
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
     rule = base.mark_rule().encode(
         y='Low:Q',
@@ -201,22 +209,35 @@ def chart_candlestick(data, ticker):
     )
     st.altair_chart(chart, use_container_width=True)
 
-# ---------------------------
-# Forecast Table Function
-# ---------------------------
-def display_forecast_table(data, forecast, forecast_days):
+def chart_forecast_overlay(data, forecast, ticker):
     """
-    Display a forecast table showing the forecast for the next 'forecast_days' days.
-    All numbers are formatted to 2 decimals.
+    Create a forecast overlay chart and return a forecast table.
     """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
+    df_hist = data.reset_index()[['index', 'Close']]
+    df_hist.rename(columns={'index': 'Date'}, inplace=True)
+    df_hist['Date'] = pd.to_datetime(df_hist['Date'])
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
     forecast_dates = forecast_dates.strftime(date_format)
     df_forecast = pd.DataFrame({
         'Date': pd.to_datetime(forecast_dates),
         'Forecasted Price': forecast
     })
+    chart_hist = alt.Chart(df_hist).mark_line(color='black').encode(
+        x='Date:T',
+        y=alt.Y('Close:Q', title='Price ($)', format=",.2f")
+    )
+    chart_forecast = alt.Chart(df_forecast).mark_line(color='orange').encode(
+        x='Date:T',
+        y=alt.Y('Forecasted Price:Q', title='Price ($)', format=",.2f")
+    )
+    chart = (chart_hist + chart_forecast).properties(
+        title=f"{ticker} - Forecast Overlay",
+        width=700,
+        height=400
+    )
+    st.altair_chart(chart, use_container_width=True)
     st.write("### Forecast Table")
     st.dataframe(df_forecast)
     return df_forecast
@@ -225,7 +246,7 @@ def display_forecast_table(data, forecast, forecast_days):
 # Fundamental Info Display
 # ---------------------------
 def display_fundamentals(ticker):
-    """Display key stock fundamentals in USD, with numbers formatted to 2 decimals."""
+    """Display key stock fundamentals in USD."""
     stock = yf.Ticker(ticker)
     info = stock.info
     fundamentals = {
@@ -247,13 +268,12 @@ def display_fundamentals(ticker):
 # Company Info Display
 # ---------------------------
 def display_company_info(ticker):
-    """Display company summary, official website, and latest news."""
+    """Display company summary, official website link, and latest news headlines."""
     name, description, website = get_company_info(ticker)
     st.subheader(name)
     st.write(description)
     if website:
         st.markdown(f"[Official Website]({website})")
-    # Latest News
     news_items = get_latest_news(ticker, count=5)
     if news_items:
         st.write("#### Latest News")
@@ -261,18 +281,6 @@ def display_company_info(ticker):
             st.markdown(f"- [{title}]({url})")
     else:
         st.write("No news available.")
-
-def get_latest_news(ticker, count=3):
-    """Return the latest news items (title and URL) for the given ticker."""
-    stock = yf.Ticker(ticker)
-    news = stock.news
-    news_items = []
-    if news and isinstance(news, list):
-        for item in news[:count]:
-            title = item.get('title', 'No title')
-            url = item.get('link') or item.get('url') or "#"
-            news_items.append((title, url))
-    return news_items
 
 # ---------------------------
 # Chat Option and Processing (Rule-Based)
@@ -324,7 +332,6 @@ interval_option = "1d"
 forecast_days = st.sidebar.number_input("Number of Forecast Days", min_value=1, value=5, step=1)
 sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 
-# Setup tabs
 tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Company Info", "Chat"])
 
 # ---------------------------
@@ -332,18 +339,16 @@ tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Company Info
 # ---------------------------
 if ticker:
     with tabs[0]:
-        # Display company overview & playful surprise button
         name, desc, _ = get_company_info(ticker)
         st.subheader(name)
         st.write(desc)
-        # Surprise Me button: show a random fun message about the stock
-        fun_messages = [
-            "This stock is on fire! Keep an eye on it.",
-            "Looks like a solid performer—maybe it's time to consider it!",
-            "The trends seem exciting. Could be a game-changer!",
-            "Market buzz is high around this one. Stay tuned!"
-        ]
         if st.button("Surprise Me!"):
+            fun_messages = [
+                "This stock is on fire! Keep an eye on it.",
+                "Looks like a solid performer—maybe it's time to consider it!",
+                "The trends seem exciting. Could be a game-changer!",
+                "Market buzz is high around this one. Stay tuned!"
+            ]
             st.success(random.choice(fun_messages))
         sentiment = get_sentiment_from_news(ticker)
         st.metric(label="News Sentiment Score", value=f"{sentiment:.2f}")
@@ -383,11 +388,10 @@ if ticker:
                 st.write(f"Forecast for the next {forecast_days} day(s):")
                 st.write(forecast_values)
                 df_forecast = display_forecast_table(data, forecast_values, forecast_days)
-                # Calculate percentage change from last actual price to forecast average
                 last_actual = float(data['Close'].iloc[-1])
                 avg_forecast = np.mean(forecast_values)
                 percent_change = ((avg_forecast - last_actual) / last_actual) * 100
-                st.write(f"**Forecast Summary:** The average forecast price is ${avg_forecast:,.2f} "
+                st.write(f"**Forecast Summary:** The average forecast price is ${avg_forecast:,.2f}, "
                          f"which is a change of {percent_change:,.2f}% from the last closing price of ${last_actual:,.2f}.")
                 recommendation = get_investment_recommendation(last_actual, df_forecast)
                 st.write("Investment Recommendation:")
@@ -405,7 +409,7 @@ if ticker:
         # ---------------------------
         with tabs[4]:
             display_company_info(ticker)
-        
+    
     # ---------------------------
     # Chat Tab
     # ---------------------------

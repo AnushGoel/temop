@@ -52,9 +52,12 @@ def plot_historical_line(data, ticker):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=data.index, y=data['Close'],
                              mode='lines', name='Close Price'))
-    fig.update_layout(title=f"Historical Closing Prices for {ticker}",
-                      xaxis_title="Date", yaxis_title="Price")
-    st.plotly_chart(fig)
+    fig.update_layout(
+        title=f"Historical Closing Prices for {ticker}",
+        xaxis_title="Date",
+        yaxis_title="Price"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 def plot_technical_indicators(data, ticker):
     """Graph 2: Technical Indicators (SMA & EMA) with Closing Prices"""
@@ -66,9 +69,12 @@ def plot_technical_indicators(data, ticker):
     fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close'))
     fig.add_trace(go.Scatter(x=data.index, y=data['SMA_20'], mode='lines', name='SMA 20'))
     fig.add_trace(go.Scatter(x=data.index, y=data['EMA_20'], mode='lines', name='EMA 20'))
-    fig.update_layout(title=f"Technical Indicators for {ticker}",
-                      xaxis_title="Date", yaxis_title="Price")
-    st.plotly_chart(fig)
+    fig.update_layout(
+        title=f"Technical Indicators for {ticker}",
+        xaxis_title="Date",
+        yaxis_title="Price"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 def plot_candlestick(data, ticker):
     """Graph 3: Candlestick Chart"""
@@ -78,25 +84,35 @@ def plot_candlestick(data, ticker):
                                          low=data['Low'],
                                          close=data['Close'],
                                          name='Candlestick')])
-    fig.update_layout(title=f"Candlestick Chart for {ticker}",
-                      xaxis_title="Date", yaxis_title="Price")
-    st.plotly_chart(fig)
+    fig.update_layout(
+        title=f"Candlestick Chart for {ticker}",
+        xaxis_title="Date",
+        yaxis_title="Price"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 def plot_forecast(data, forecast, ticker, interval):
-    """Graph 4: Forecast Overlay (Historical + LSTM Forecast)"""
-    # Determine frequency for forecast dates
+    """Graph 4: Forecast Overlay with forecast table (dates without seconds)."""
     if interval == "1d":
         freq = "B"  # Business day frequency for daily data
+        date_format = "%Y-%m-%d"
     else:
         freq = "60min"  # Hourly intervals
+        date_format = "%Y-%m-%d %H:%M"
+    
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
+    # Format dates as strings to remove seconds
+    forecast_dates = forecast_dates.strftime(date_format)
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Historical'))
     fig.add_trace(go.Scatter(x=forecast_dates, y=forecast, mode='lines', name='Forecast'))
-    fig.update_layout(title=f"Forecast for {ticker}",
-                      xaxis_title="Date", yaxis_title="Price")
-    st.plotly_chart(fig)
+    fig.update_layout(
+        title=f"Forecast for {ticker}",
+        xaxis_title="Date",
+        yaxis_title="Price"
+    )
+    st.plotly_chart(fig, use_container_width=True)
     
     # Display forecast results as a table with dates
     forecast_df = pd.DataFrame({"Date": forecast_dates, "Forecasted Price": forecast})
@@ -135,20 +151,32 @@ def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon)
     for _ in range(forecast_horizon):
         current_sequence_reshaped = np.reshape(current_sequence, (1, sequence_length, 1))
         prediction = model.predict(current_sequence_reshaped)
-        forecast.append(prediction[0,0])
-        current_sequence = np.append(current_sequence[1:], prediction[0,0])
-    forecast = scaler.inverse_transform(np.array(forecast).reshape(-1,1))
+        forecast.append(prediction[0, 0])
+        current_sequence = np.append(current_sequence[1:], prediction[0, 0])
+    forecast = scaler.inverse_transform(np.array(forecast).reshape(-1, 1))
     return forecast.flatten()
+
+# ----- Recommendation Function -----
+
+def get_investment_recommendation(last_actual, final_forecast):
+    """Provide a simple recommendation based on percentage change."""
+    percentage_change = (final_forecast - last_actual) / last_actual * 100
+    if percentage_change > 3:
+        return "Based on the forecast, it is highly recommended to invest."
+    elif percentage_change < -3:
+        return "The forecast suggests a decline. Not recommended to invest now. Consider waiting."
+    else:
+        return "The forecast is steady. Hold off for a few days before investing."
 
 # ----- Streamlit App UI -----
 
-st.title("Advanced Interactive Stock Forecasting with Multiple Graphs")
+st.title("Advanced Interactive Stock Forecasting")
 st.write("""
 This app displays:
 - **Graph 1:** Historical Closing Prices (Line Chart)
 - **Graph 2:** Technical Indicators (SMA & EMA)
 - **Graph 3:** Candlestick Chart
-- **Graph 4:** Forecast Overlay using an LSTM model with forecast results (dates included)
+- **Graph 4:** Forecast Overlay using an LSTM model with forecast results (dates without seconds)
 """)
 
 # Sidebar: Input Parameters
@@ -174,8 +202,12 @@ if ticker:
     st.write(f"**Enhanced Sentiment Score from News:** {sentiment:.2f}")
     
     # Fetch historical data
-    data = get_historical_data(ticker, start_date.strftime("%Y-%m-%d"),
-                               end_date.strftime("%Y-%m-%d"), interval_option)
+    data = get_historical_data(
+        ticker,
+        start_date.strftime("%Y-%m-%d"),
+        end_date.strftime("%Y-%m-%d"),
+        interval_option
+    )
     
     if data.empty:
         st.error("No historical data found. Adjust your dates or ticker.")
@@ -206,3 +238,10 @@ if ticker:
             st.write(f"Forecast for the next {forecast_horizon} interval(s):")
             st.write(forecast_values)
             plot_forecast(data, forecast_values, ticker, interval_option)
+            
+            # Investment Recommendation
+            last_actual = data['Close'].iloc[-1]
+            final_forecast = forecast_values[-1]
+            recommendation = get_investment_recommendation(last_actual, final_forecast)
+            st.write("### Investment Recommendation")
+            st.write(recommendation)

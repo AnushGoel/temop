@@ -45,10 +45,15 @@ st.markdown(
 def ensure_date_column(df):
     """
     Ensure that the DataFrame has a 'Date' column in datetime format.
-    If the reset index column is not named 'Date', rename the first column.
+    If 'Date' does not exist but an 'index' column does, rename it to 'Date'.
     """
     if 'Date' not in df.columns:
-        df = df.rename(columns={df.columns[0]: 'Date'})
+        if 'index' in df.columns:
+            df = df.rename(columns={'index': 'Date'})
+        else:
+            # If neither exists, use the first column as Date
+            first_col = df.columns[0]
+            df = df.rename(columns={first_col: 'Date'})
     df['Date'] = pd.to_datetime(df['Date'])
     return df
 
@@ -184,9 +189,15 @@ def chart_technical_indicators(data, ticker):
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
-    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', axis=alt.Axis(title='Price ($)')))
-    line_sma = base.mark_line(color='blue').encode(y=alt.Y('SMA_20:Q', axis=alt.Axis(title='SMA 20 ($)')))
-    line_ema = base.mark_line(color='red').encode(y=alt.Y('EMA_20:Q', axis=alt.Axis(title='EMA 20 ($)')))
+    line_close = base.mark_line(color='black').encode(
+        y=alt.Y('Close:Q', axis=alt.Axis(title='Price ($)'))
+    )
+    line_sma = base.mark_line(color='blue').encode(
+        y=alt.Y('SMA_20:Q', axis=alt.Axis(title='SMA 20 ($)'))
+    )
+    line_ema = base.mark_line(color='red').encode(
+        y=alt.Y('EMA_20:Q', axis=alt.Axis(title='EMA 20 ($)'))
+    )
     chart = (line_close + line_sma + line_ema).properties(
         title=f"{ticker} - Technical Indicators",
         width=700,
@@ -393,7 +404,7 @@ if ticker:
                 forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_days)
                 st.write(f"Forecast for the next {forecast_days} day(s):")
                 st.write(forecast_values)
-                df_forecast = display_forecast_table(data, forecast_values, forecast_days)
+                df_forecast = chart_forecast_overlay(data, forecast_values, ticker)
                 last_actual = float(data['Close'].iloc[-1])
                 avg_forecast = np.mean(forecast_values)
                 percent_change = ((avg_forecast - last_actual) / last_actual) * 100

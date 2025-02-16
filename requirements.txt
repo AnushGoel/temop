@@ -2,7 +2,7 @@ streamlit
 yfinance
 pandas
 numpy
-plotly
+altair
 tensorflow
 scikit-learn
 nltk

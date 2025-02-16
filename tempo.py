@@ -44,8 +44,8 @@ st.markdown(
 # ---------------------------
 def ensure_date_column(df):
     """
-    Ensure that the DataFrame has a 'Date' column in datetime format.
-    If the reset index column is not named "Date", rename the first column.
+    Ensure the DataFrame has a 'Date' column in datetime format.
+    If not, rename the first column to 'Date' and convert it.
     """
     if 'Date' not in df.columns:
         df = df.rename(columns={df.columns[0]: 'Date'})
@@ -339,8 +339,7 @@ st.sidebar.title("Stock Dashboard Settings")
 ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
-# Daily data only
-interval_option = "1d"
+interval_option = "1d"  # Daily data only
 forecast_days = st.sidebar.number_input("Number of Forecast Days", min_value=1, value=5, step=1)
 sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 
@@ -399,6 +398,7 @@ if ticker:
                 forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_days)
                 st.write(f"Forecast for the next {forecast_days} day(s):")
                 st.write(forecast_values)
+                # Use the forecast overlay function to display the chart and table
                 df_forecast = chart_forecast_overlay(data, forecast_values, ticker)
                 last_actual = float(data['Close'].iloc[-1])
                 avg_forecast = np.mean(forecast_values)

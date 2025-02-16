@@ -6,3 +6,4 @@ altair
 tensorflow
 scikit-learn
 nltk
+forex-python

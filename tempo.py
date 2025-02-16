@@ -19,6 +19,9 @@ vader_analyzer = SentimentIntensityAnalyzer()
 # For dynamic currency conversion
 from forex_python.converter import CurrencyRates
 
+# For GPT Chat integration
+import openai
+
 # ---------------------------
 # Dynamic Currency Conversion
 # ---------------------------
@@ -272,7 +275,7 @@ forecast_period_multiplier = {
 }
 
 # ---------------------------
-# Chat Option and Processing
+# Chat Option and Processing using OpenAI GPT
 # ---------------------------
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
@@ -287,29 +290,20 @@ def display_chat():
         else:
             st.markdown(f"**Advisor:** {message}")
 
-# Re-define process_chat here so it can use conv_factor and curr_symbol
 def process_chat(query):
-    query = query.lower()
-    if "clear chat" in query:
-        st.session_state["chat_history"] = []
-        return "Chat cleared."
-    if "closing price" in query:
-        if "apple" in query or "aapl" in query:
-            ticker = "AAPL"
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            price = info.get("regularMarketPrice", None)
-            if price is not None:
-                price_conv = price * conv_factor
-                return f"The closing price of Apple stock today is {curr_symbol}{round(price_conv, 2)}."
-            else:
-                return "I couldn't fetch the closing price at this time."
-        else:
-            return "I'm not sure. Please consult a financial advisor for personalized advice."
-    elif "best stock" in query:
-        return "Based on current trends, AAPL, MSFT, and TSLA are popular choices—but always do your own research!"
-    else:
-        return "I'm not sure. Please consult a financial advisor for personalized advice."
+    # Use OpenAI's GPT model to process the query.
+    # Make sure to set your OpenAI API key in Streamlit secrets as OPENAI_API_KEY.
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": query}],
+            temperature=0.7
+        )
+        answer = response.choices[0].message.content
+        return answer
+    except Exception as e:
+        return "Sorry, I'm having trouble processing that query right now."
 
 # ---------------------------
 # Sidebar Inputs and Tabs Setup
@@ -406,7 +400,6 @@ if ticker:
     # ---------------------------
     with tabs[4]:
         st.subheader("Ask Your Investment Advisor")
-        # Clear Chat Button
         if st.button("Clear Chat"):
             st.session_state["chat_history"] = []
         display_chat()

@@ -4,7 +4,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import altair as alt
-import random
 
 # TensorFlow & Keras for LSTM model
 import tensorflow as tf
@@ -33,7 +32,6 @@ st.markdown(
     .main { background-color: #f5f5f5; }
     .sidebar .sidebar-content { background-image: linear-gradient(#2e7bcf, #2e7bcf); color: white; }
     h1, h2, h3, h4 { color: #2e7bcf; }
-    .button { background-color: #2e7bcf; color: white; padding: 8px 16px; border-radius: 5px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -43,16 +41,15 @@ st.markdown(
 # Helper Functions
 # ---------------------------
 def get_company_info(ticker):
-    """Retrieve company name, description, and website (if available)."""
+    """Retrieve company name and description."""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
         name = info.get('longName', ticker)
         description = info.get('longBusinessSummary', "No description available.")
-        website = info.get('website', None)
-        return name, description, website
+        return name, description
     except Exception:
-        return ticker, "No description available.", None
+        return ticker, "No description available."
 
 def get_sentiment_from_news(ticker):
     """Calculate an aggregated sentiment score from recent news using VADER."""
@@ -74,19 +71,6 @@ def get_news_impact(ticker):
         return f"News appears generally negative (avg sentiment {sentiment:.2f}); this may put downward pressure on prices."
     else:
         return f"News sentiment is neutral (avg sentiment {sentiment:.2f}); expect little immediate impact."
-
-def get_latest_news(ticker, count=3):
-    """Return the latest news items (title and URL) for the given ticker."""
-    stock = yf.Ticker(ticker)
-    news = stock.news
-    news_items = []
-    if news and isinstance(news, list):
-        for item in news[:count]:
-            title = item.get('title', 'No title')
-            # Some items may have "link" or "url"
-            url = item.get('link') or item.get('url') or "#"
-            news_items.append((title, url))
-    return news_items
 
 def get_historical_data(ticker, start_date, end_date, interval="1d"):
     """Retrieve historical data using yfinance (daily data only)."""
@@ -157,7 +141,7 @@ def chart_historical_line(data, ticker):
     df = data.reset_index()
     chart = alt.Chart(df).mark_line(color="#2e7bcf").encode(
         x=alt.X('Date:T', title='Date'),
-        y=alt.Y('Close:Q', title='Close Price ($)', format=",.2f")
+        y=alt.Y('Close:Q', title='Close Price ($)')
     ).properties(
         title=f"{ticker} - Historical Closing Prices",
         width=700,
@@ -171,9 +155,9 @@ def chart_technical_indicators(data, ticker):
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
-    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', title='Price ($)', format=",.2f"))
-    line_sma = base.mark_line(color='blue').encode(y=alt.Y('SMA_20:Q', title='SMA 20 ($)', format=",.2f"))
-    line_ema = base.mark_line(color='red').encode(y=alt.Y('EMA_20:Q', title='EMA 20 ($)', format=",.2f"))
+    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', title='Price ($)'))
+    line_sma = base.mark_line(color='blue').encode(y='SMA_20:Q')
+    line_ema = base.mark_line(color='red').encode(y='EMA_20:Q')
     chart = (line_close + line_sma + line_ema).properties(
         title=f"{ticker} - Technical Indicators",
         width=700,
@@ -207,7 +191,6 @@ def chart_candlestick(data, ticker):
 def display_forecast_table(data, forecast, forecast_days):
     """
     Display a forecast table showing the forecast for the next 'forecast_days' days.
-    All numbers are formatted to 2 decimals.
     """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
@@ -225,7 +208,7 @@ def display_forecast_table(data, forecast, forecast_days):
 # Fundamental Info Display
 # ---------------------------
 def display_fundamentals(ticker):
-    """Display key stock fundamentals in USD, with numbers formatted to 2 decimals."""
+    """Display key stock fundamentals in USD."""
     stock = yf.Ticker(ticker)
     info = stock.info
     fundamentals = {
@@ -239,40 +222,9 @@ def display_fundamentals(ticker):
     }
     for key, value in fundamentals.items():
         if isinstance(value, (int, float)):
-            fundamentals[key] = f"${round(value, 2):,.2f}"
+            fundamentals[key] = f"${round(value, 2)}"
     df_fund = pd.DataFrame(fundamentals, index=[ticker])
     st.dataframe(df_fund)
-
-# ---------------------------
-# Company Info Display
-# ---------------------------
-def display_company_info(ticker):
-    """Display company summary, official website, and latest news."""
-    name, description, website = get_company_info(ticker)
-    st.subheader(name)
-    st.write(description)
-    if website:
-        st.markdown(f"[Official Website]({website})")
-    # Latest News
-    news_items = get_latest_news(ticker, count=5)
-    if news_items:
-        st.write("#### Latest News")
-        for title, url in news_items:
-            st.markdown(f"- [{title}]({url})")
-    else:
-        st.write("No news available.")
-
-def get_latest_news(ticker, count=3):
-    """Return the latest news items (title and URL) for the given ticker."""
-    stock = yf.Ticker(ticker)
-    news = stock.news
-    news_items = []
-    if news and isinstance(news, list):
-        for item in news[:count]:
-            title = item.get('title', 'No title')
-            url = item.get('link') or item.get('url') or "#"
-            news_items.append((title, url))
-    return news_items
 
 # ---------------------------
 # Chat Option and Processing (Rule-Based)
@@ -298,11 +250,12 @@ def process_chat(query):
         return "Chat cleared."
     elif "closing price" in query:
         if "apple" in query or "aapl" in query:
-            stock = yf.Ticker("AAPL")
+            ticker = "AAPL"
+            stock = yf.Ticker(ticker)
             info = stock.info
             price = info.get("regularMarketPrice", None)
             if price is not None:
-                return f"The closing price of Apple stock today is ${round(price, 2):,.2f}."
+                return f"The closing price of Apple stock today is ${round(price, 2)}."
             else:
                 return "I couldn't fetch the closing price at this time."
         else:
@@ -324,27 +277,16 @@ interval_option = "1d"
 forecast_days = st.sidebar.number_input("Number of Forecast Days", min_value=1, value=5, step=1)
 sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 
-# Setup tabs
-tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Company Info", "Chat"])
+tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Chat"])
 
 # ---------------------------
 # Dashboard Tab
 # ---------------------------
 if ticker:
     with tabs[0]:
-        # Display company overview & playful surprise button
-        name, desc, _ = get_company_info(ticker)
-        st.subheader(name)
-        st.write(desc)
-        # Surprise Me button: show a random fun message about the stock
-        fun_messages = [
-            "This stock is on fire! Keep an eye on it.",
-            "Looks like a solid performer—maybe it's time to consider it!",
-            "The trends seem exciting. Could be a game-changer!",
-            "Market buzz is high around this one. Stay tuned!"
-        ]
-        if st.button("Surprise Me!"):
-            st.success(random.choice(fun_messages))
+        comp_name, comp_desc = get_company_info(ticker)
+        st.subheader(comp_name)
+        st.write(comp_desc)
         sentiment = get_sentiment_from_news(ticker)
         st.metric(label="News Sentiment Score", value=f"{sentiment:.2f}")
         news_impact = get_news_impact(ticker)
@@ -383,12 +325,7 @@ if ticker:
                 st.write(f"Forecast for the next {forecast_days} day(s):")
                 st.write(forecast_values)
                 df_forecast = display_forecast_table(data, forecast_values, forecast_days)
-                # Calculate percentage change from last actual price to forecast average
                 last_actual = float(data['Close'].iloc[-1])
-                avg_forecast = np.mean(forecast_values)
-                percent_change = ((avg_forecast - last_actual) / last_actual) * 100
-                st.write(f"**Forecast Summary:** The average forecast price is ${avg_forecast:,.2f} "
-                         f"which is a change of {percent_change:,.2f}% from the last closing price of ${last_actual:,.2f}.")
                 recommendation = get_investment_recommendation(last_actual, df_forecast)
                 st.write("Investment Recommendation:")
                 st.info(recommendation)
@@ -399,17 +336,11 @@ if ticker:
         with tabs[3]:
             st.write("Displaying fundamentals in USD ($):")
             display_fundamentals(ticker)
-        
-        # ---------------------------
-        # Company Info Tab
-        # ---------------------------
-        with tabs[4]:
-            display_company_info(ticker)
-        
+    
     # ---------------------------
     # Chat Tab
     # ---------------------------
-    with tabs[5]:
+    with tabs[4]:
         st.subheader("Ask Your Investment Advisor")
         if st.button("Clear Chat"):
             st.session_state["chat_history"] = []

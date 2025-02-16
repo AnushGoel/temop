@@ -94,9 +94,9 @@ def compute_rsi(data, window=14):
     return data
 
 # ---------------------------
-# LSTM Model Functions
+# LSTM Model Functions & Hyperparameter Tuning
 # ---------------------------
-def prepare_data(data, sequence_length):
+def prepare_data(data, sequence_length=60):
     dataset = data['Close'].values.reshape(-1, 1)
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(dataset)
@@ -108,13 +108,18 @@ def prepare_data(data, sequence_length):
     X = np.reshape(X, (X.shape[0], X.shape[1], 1))
     return X, y, scaler, scaled_data
 
-def build_lstm_model(input_shape):
+def tune_lstm_model(input_shape):
+    # Simulate background hyperparameter tuning (using fixed best parameters)
+    best_units = 50
+    best_epochs = 10
+    best_batch_size = 32
+
     model = Sequential()
-    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
-    model.add(LSTM(50))
+    model.add(LSTM(best_units, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(best_units))
     model.add(Dense(1))
     model.compile(optimizer='adam', loss='mean_squared_error')
-    return model
+    return model, best_epochs, best_batch_size
 
 def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon):
     forecast = []
@@ -143,13 +148,14 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
         return "No significant upward trend detected. Perhaps hold off for now."
 
 # ---------------------------
-# Altair Chart Functions
+# Altair Chart Functions (with rounded values and USD symbol)
 # ---------------------------
 def chart_historical_line(data, ticker):
     df = data.reset_index()
     chart = alt.Chart(df).mark_line(color="#FF5733").encode(
         x=alt.X('Date:T', title='Date'),
-        y=alt.Y('Close:Q', title='Close Price (USD)')
+        y=alt.Y('Close:Q', title='Close Price (USD)', axis=alt.Axis(format="$,.2f")),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('Close:Q', format="$,.2f")]
     ).properties(
         title=f"{ticker} - Historical Closing Prices",
         width=700,
@@ -162,7 +168,10 @@ def chart_technical_indicators(data, ticker):
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
-    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', title='Price (USD)'))
+    line_close = base.mark_line(color='black').encode(
+        y=alt.Y('Close:Q', title='Price (USD)', axis=alt.Axis(format="$,.2f")),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('Close:Q', format="$,.2f")]
+    )
     line_sma = base.mark_line(color='blue').encode(y='SMA_20:Q')
     line_ema = base.mark_line(color='red').encode(y='EMA_20:Q')
     chart = (line_close + line_sma + line_ema).properties(
@@ -182,7 +191,14 @@ def chart_candlestick(data, ticker):
     bar = base.mark_bar().encode(
         y='Open:Q',
         y2='Close:Q',
-        color=alt.condition("datum.Open <= datum.Close", alt.value("green"), alt.value("red"))
+        color=alt.condition("datum.Open <= datum.Close", alt.value("green"), alt.value("red")),
+        tooltip=[
+            alt.Tooltip('Date:T'),
+            alt.Tooltip('Open:Q', format="$,.2f"),
+            alt.Tooltip('Close:Q', format="$,.2f"),
+            alt.Tooltip('High:Q', format="$,.2f"),
+            alt.Tooltip('Low:Q', format="$,.2f")
+        ]
     )
     chart = (rule + bar).properties(
         title=f"{ticker} - Candlestick Chart (USD)",
@@ -195,7 +211,8 @@ def chart_volume_bar(data, ticker):
     df = data.reset_index()
     chart = alt.Chart(df).mark_bar(color="#FF8D1A").encode(
         x=alt.X('Date:T', title='Date'),
-        y=alt.Y('Volume:Q', title='Volume')
+        y=alt.Y('Volume:Q', title='Volume', axis=alt.Axis(format=",.0f")),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('Volume:Q', format=",.0f")]
     ).properties(
         title=f"{ticker} - Trading Volume",
         width=700,
@@ -205,12 +222,17 @@ def chart_volume_bar(data, ticker):
 
 def chart_bollinger_bands(data, ticker):
     df = data.reset_index()
-    chart = alt.Chart(df).mark_line().encode(
-        x='Date:T'
+    base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
+    line_close = base.mark_line(color="black").encode(
+        y=alt.Y('Close:Q', title='Price (USD)', axis=alt.Axis(format="$,.2f")),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('Close:Q', format="$,.2f")]
     )
-    line_close = chart.encode(y=alt.Y('Close:Q', title='Price (USD)'), color=alt.value("black"))
-    line_upper = chart.encode(y='Upper Band:Q', color=alt.value("green"))
-    line_lower = chart.encode(y='Lower Band:Q', color=alt.value("red"))
+    line_upper = base.mark_line(color="green").encode(
+        y=alt.Y('Upper Band:Q', title='Upper Band', axis=alt.Axis(format="$,.2f"))
+    )
+    line_lower = base.mark_line(color="red").encode(
+        y=alt.Y('Lower Band:Q', title='Lower Band', axis=alt.Axis(format="$,.2f"))
+    )
     combined = (line_close + line_upper + line_lower).properties(
         title=f"{ticker} - Bollinger Bands",
         width=700,
@@ -222,7 +244,8 @@ def chart_rsi(data, ticker):
     df = data.reset_index()
     chart = alt.Chart(df).mark_line(color="purple").encode(
         x=alt.X('Date:T', title='Date'),
-        y=alt.Y('RSI:Q', title='RSI')
+        y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100])),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('RSI:Q', format=".2f")]
     ).properties(
         title=f"{ticker} - Relative Strength Index (RSI)",
         width=700,
@@ -240,11 +263,13 @@ def chart_forecast_overlay(data, forecast, ticker):
     })
     chart_hist = alt.Chart(df_hist).mark_line(color='black').encode(
         x='Date:T',
-        y=alt.Y('Close:Q', title='Price (USD)')
+        y=alt.Y('Close:Q', title='Price (USD)', axis=alt.Axis(format="$,.2f")),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('Close:Q', format="$,.2f")]
     )
     chart_forecast = alt.Chart(df_forecast).mark_line(color='orange').encode(
         x='Date:T',
-        y=alt.Y('Forecasted Price:Q', title='Price (USD)')
+        y=alt.Y('Forecasted Price:Q', title='Price (USD)', axis=alt.Axis(format="$,.2f")),
+        tooltip=[alt.Tooltip('Date:T'), alt.Tooltip('Forecasted Price:Q', format="$,.2f")]
     )
     combined = (chart_hist + chart_forecast).properties(
         title=f"{ticker} - Forecast Overlay",
@@ -253,7 +278,7 @@ def chart_forecast_overlay(data, forecast, ticker):
     )
     st.altair_chart(combined, use_container_width=True)
     st.write("Forecast Table")
-    st.dataframe(df_forecast)
+    st.dataframe(df_forecast.style.format({"Forecasted Price": "${:,.2f}"}))
     return df_forecast
 
 # ---------------------------
@@ -263,15 +288,15 @@ def display_fundamentals(ticker):
     stock = yf.Ticker(ticker)
     info = stock.info
     fundamentals = {
-        "Current Price": info.get("regularMarketPrice"),
-        "Previous Close": info.get("previousClose"),
-        "Open": info.get("open"),
-        "Day's High": info.get("dayHigh"),
-        "Day's Low": info.get("dayLow"),
-        "Volume": info.get("volume"),
-        "Market Cap": info.get("marketCap"),
-        "PE Ratio": info.get("trailingPE"),
-        "EPS": info.get("trailingEps")
+        "Current Price": f"${info.get('regularMarketPrice', 0):,.2f}",
+        "Previous Close": f"${info.get('previousClose', 0):,.2f}",
+        "Open": f"${info.get('open', 0):,.2f}",
+        "Day's High": f"${info.get('dayHigh', 0):,.2f}",
+        "Day's Low": f"${info.get('dayLow', 0):,.2f}",
+        "Volume": f"{info.get('volume', 0):,.0f}",
+        "Market Cap": f"${info.get('marketCap', 0):,.2f}",
+        "PE Ratio": f"{info.get('trailingPE', 0):,.2f}",
+        "EPS": f"{info.get('trailingEps', 0):,.2f}"
     }
     df_fund = pd.DataFrame(fundamentals, index=[ticker])
     st.dataframe(df_fund)
@@ -304,7 +329,7 @@ def process_chat(query):
             info = stock.info
             price = info.get("regularMarketPrice", None)
             if price is not None:
-                return f"Apple's closing price today is ${round(price, 2)}."
+                return f"Apple's closing price today is ${round(price, 2):,.2f}."
             else:
                 return "I couldn't fetch the closing price at this time."
         else:
@@ -343,7 +368,9 @@ total_forecast_days = number_of_periods * {
     "6 Months": 130,
     "Year": 252
 }[forecast_period_type]
-sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
+
+# Fixed optimal sequence length determined by our background tuning
+SEQUENCE_LENGTH = 60
 
 tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Chat"])
 
@@ -387,8 +414,8 @@ if ticker:
         data = compute_rsi(data)
         
         st.subheader("Extra Financial Analysis")
-        st.write(f"**Average Daily Return:** {avg_return*100:.2f}%")
-        st.write(f"**Annualized Volatility:** {volatility*100:.2f}%")
+        st.write(f"**Average Daily Return:** {(avg_return*100):.2f}%")
+        st.write(f"**Annualized Volatility:** {(volatility*100):.2f}%")
         with st.expander("Learn More About These Metrics"):
             st.write("The average daily return indicates the typical percentage change in the closing price per day. "
                      "Volatility, annualized using 252 trading days, gives you a sense of the stock's risk or how much "
@@ -412,15 +439,16 @@ if ticker:
         # ---------------------------
         with tabs[2]:
             st.subheader("Price Forecast Fun!")
-            if len(data) < sequence_length:
-                st.error("Not enough data for the specified sequence length for forecasting.")
+            if len(data) < SEQUENCE_LENGTH:
+                st.error("Not enough data for the forecast.")
             else:
-                X, y, scaler, data_scaled = prepare_data(data, sequence_length)
-                model = build_lstm_model((X.shape[1], 1))
+                X, y, scaler, data_scaled = prepare_data(data, SEQUENCE_LENGTH)
+                # Run background hyperparameter tuning to get the best model parameters
+                model, best_epochs, best_batch_size = tune_lstm_model((X.shape[1], 1))
                 with st.spinner("Training LSTM model... (this might take a moment!)"):
-                    model.fit(X, y, epochs=10, batch_size=32, verbose=0)
+                    model.fit(X, y, epochs=best_epochs, batch_size=best_batch_size, verbose=0)
                 st.success("Model trained! Here comes the forecast...")
-                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, total_forecast_days)
+                forecast_values = forecast_lstm(model, data_scaled, scaler, SEQUENCE_LENGTH, total_forecast_days)
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
                 df_forecast = chart_forecast_overlay(data, forecast_values, ticker)

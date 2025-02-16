@@ -210,8 +210,7 @@ def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
     Overlay chart of historical data and forecast.
     Also displays a forecast table.
     """
-    # Using daily (business) frequency
-    freq = "B"
+    freq = "B"  # Business days
     date_format = "%Y-%m-%d"
     df_hist = data.reset_index()[['Date', 'Close']]
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
@@ -262,7 +261,7 @@ def display_fundamentals(ticker, conv_factor, curr_symbol):
 # ---------------------------
 # Forecast Period Mapping (Dynamic)
 # ---------------------------
-# The user chooses a period type and a number; these are converted to days.
+# The user chooses a period type and number; these are converted to total forecast days.
 forecast_period_multiplier = {
     "Days": 1,
     "Weeks": 7,
@@ -273,7 +272,7 @@ forecast_period_multiplier = {
 }
 
 # ---------------------------
-# Chat Option
+# Chat Option and Processing
 # ---------------------------
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
@@ -288,30 +287,43 @@ def display_chat():
         else:
             st.markdown(f"**Advisor:** {message}")
 
+# Re-define process_chat here so it can use conv_factor and curr_symbol
 def process_chat(query):
     query = query.lower()
-    if "best stock" in query:
-        response = "Based on current trends, AAPL, MSFT, and TSLA are popular choices—but always do your own research!"
+    if "clear chat" in query:
+        st.session_state["chat_history"] = []
+        return "Chat cleared."
+    if "closing price" in query:
+        if "apple" in query or "aapl" in query:
+            ticker = "AAPL"
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            price = info.get("regularMarketPrice", None)
+            if price is not None:
+                price_conv = price * conv_factor
+                return f"The closing price of Apple stock today is {curr_symbol}{round(price_conv, 2)}."
+            else:
+                return "I couldn't fetch the closing price at this time."
+        else:
+            return "I'm not sure. Please consult a financial advisor for personalized advice."
+    elif "best stock" in query:
+        return "Based on current trends, AAPL, MSFT, and TSLA are popular choices—but always do your own research!"
     else:
-        response = "I'm not sure. Please consult a financial advisor for personalized advice."
-    return response
+        return "I'm not sure. Please consult a financial advisor for personalized advice."
 
 # ---------------------------
-# Streamlit Dashboard UI with Tabs
+# Sidebar Inputs and Tabs Setup
 # ---------------------------
 st.sidebar.title("Stock Dashboard Settings")
 ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
-# Only daily data is used.
+# Daily data only
 interval_option = "1d"
-# Forecast period: select type and number of periods.
 forecast_period_type = st.sidebar.selectbox("Forecast Period Type", 
                                               ["Days", "Weeks", "15 Days", "Months", "6 Months", "Year"])
 number_of_periods = st.sidebar.number_input("Number of Periods", min_value=1, value=1, step=1)
-# Calculate total forecast horizon in days.
 total_forecast_days = number_of_periods * forecast_period_multiplier[forecast_period_type]
-
 currency = st.sidebar.selectbox("Select Currency", ["USD", "EUR", "GBP", "INR"])
 conv_factor = get_conversion_rate(currency)
 curr_symbol = currency_symbols.get(currency, "$")
@@ -319,8 +331,10 @@ sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, 
 
 tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Chat"])
 
+# ---------------------------
+# Dashboard Tab
+# ---------------------------
 if ticker:
-    # --- Dashboard Tab ---
     with tabs[0]:
         comp_name, comp_desc = get_company_info(ticker)
         st.subheader(comp_name)
@@ -331,7 +345,9 @@ if ticker:
         st.write("News Impact Analysis:")
         st.info(news_impact)
     
-    # Fetch historical data and apply currency conversion
+    # ---------------------------
+    # Fetch Historical Data and Apply Currency Conversion
+    # ---------------------------
     data = get_historical_data(ticker, start_date.strftime("%Y-%m-%d"),
                                end_date.strftime("%Y-%m-%d"), interval_option)
     if data.empty:
@@ -341,13 +357,17 @@ if ticker:
             if col in data.columns:
                 data[col] = data[col] * conv_factor
 
-        # --- Charts Tab ---
+        # ---------------------------
+        # Charts Tab
+        # ---------------------------
         with tabs[1]:
             chart_historical_line(data, ticker, curr_symbol)
             chart_technical_indicators(data, ticker, curr_symbol)
             chart_candlestick(data, ticker, curr_symbol)
         
-        # --- Forecast Tab ---
+        # ---------------------------
+        # Forecast Tab
+        # ---------------------------
         with tabs[2]:
             if len(data) < sequence_length:
                 st.error("Not enough data for the specified sequence length for forecasting.")
@@ -361,7 +381,6 @@ if ticker:
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
                 chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
-                # Build forecast table for recommendation
                 freq = "B"
                 date_format = "%Y-%m-%d"
                 forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
@@ -375,14 +394,21 @@ if ticker:
                 st.write("Investment Recommendation:")
                 st.info(recommendation)
         
-        # --- Fundamentals Tab ---
+        # ---------------------------
+        # Fundamentals Tab
+        # ---------------------------
         with tabs[3]:
             st.write(f"Displaying fundamentals in {currency} ({curr_symbol}):")
             display_fundamentals(ticker, conv_factor, curr_symbol)
     
-    # --- Chat Tab ---
+    # ---------------------------
+    # Chat Tab
+    # ---------------------------
     with tabs[4]:
         st.subheader("Ask Your Investment Advisor")
+        # Clear Chat Button
+        if st.button("Clear Chat"):
+            st.session_state["chat_history"] = []
         display_chat()
         user_query = st.text_input("Enter your question:")
         if st.button("Send"):

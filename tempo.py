@@ -32,7 +32,7 @@ def get_conversion_rate(to_currency):
             rate = c.get_rate("USD", to_currency)
             return rate
     except Exception:
-        # If error, default to 1.0 (i.e. USD)
+        # If error, silently default to 1.0 (USD)
         return 1.0
 
 # Currency symbols mapping
@@ -44,7 +44,7 @@ currency_symbols = {
 }
 
 # ---------------------------
-# Custom CSS for a polished look
+# Custom CSS for polished look
 # ---------------------------
 st.markdown(
     """
@@ -205,12 +205,13 @@ def chart_candlestick(data, ticker, curr_symbol):
     )
     st.altair_chart(chart, use_container_width=True)
 
-def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
+def chart_forecast_overlay(data, forecast, ticker, interval, curr_symbol):
     """
     Overlay chart of historical data and forecast.
     Also displays a forecast table.
     """
-    freq = "B"  # Business days
+    # For daily data only, use "B" frequency.
+    freq = "B"
     date_format = "%Y-%m-%d"
     df_hist = data.reset_index()[['Date', 'Close']]
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
@@ -259,20 +260,18 @@ def display_fundamentals(ticker, conv_factor, curr_symbol):
     st.dataframe(df_fund)
 
 # ---------------------------
-# Forecast Period Mapping (Dynamic)
+# Forecast Period Mapping
 # ---------------------------
-# The user chooses a period type and number; these are converted to total forecast days.
-forecast_period_multiplier = {
-    "Days": 1,
-    "Weeks": 7,
-    "15 Days": 15,
-    "Months": 22,   # Approximate trading days in a month
-    "6 Months": 130, # Approximate trading days in 6 months
-    "Year": 252      # Approximate trading days in a year
+forecast_period_mapping = {
+    "15 days": 15,
+    "1 week": 7,
+    "1 month": 22,
+    "6 months": 130,
+    "1 year": 252
 }
 
 # ---------------------------
-# Chat Option and Processing
+# Chat Option (Simple)
 # ---------------------------
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
@@ -287,54 +286,35 @@ def display_chat():
         else:
             st.markdown(f"**Advisor:** {message}")
 
-# Re-define process_chat here so it can use conv_factor and curr_symbol
 def process_chat(query):
     query = query.lower()
-    if "clear chat" in query:
-        st.session_state["chat_history"] = []
-        return "Chat cleared."
-    if "closing price" in query:
-        if "apple" in query or "aapl" in query:
-            ticker = "AAPL"
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            price = info.get("regularMarketPrice", None)
-            if price is not None:
-                price_conv = price * conv_factor
-                return f"The closing price of Apple stock today is {curr_symbol}{round(price_conv, 2)}."
-            else:
-                return "I couldn't fetch the closing price at this time."
-        else:
-            return "I'm not sure. Please consult a financial advisor for personalized advice."
-    elif "best stock" in query:
-        return "Based on current trends, AAPL, MSFT, and TSLA are popular choices—but always do your own research!"
+    # A very simple rule-based response.
+    if "best stock" in query:
+        response = "Based on current trends, AAPL, MSFT, and TSLA are popular choices—but always do your own research!"
     else:
-        return "I'm not sure. Please consult a financial advisor for personalized advice."
+        response = "I'm not sure. Please consult a financial advisor for personalized advice."
+    return response
 
 # ---------------------------
-# Sidebar Inputs and Tabs Setup
+# Streamlit Dashboard UI with Tabs
 # ---------------------------
 st.sidebar.title("Stock Dashboard Settings")
 ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
-# Daily data only
+# Only daily data is used now.
 interval_option = "1d"
-forecast_period_type = st.sidebar.selectbox("Forecast Period Type", 
-                                              ["Days", "Weeks", "15 Days", "Months", "6 Months", "Year"])
-number_of_periods = st.sidebar.number_input("Number of Periods", min_value=1, value=1, step=1)
-total_forecast_days = number_of_periods * forecast_period_multiplier[forecast_period_type]
+forecast_period_option = st.sidebar.selectbox("Forecast Period", list(forecast_period_mapping.keys()))
+# Use LSTM sequence length input as before.
+sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 currency = st.sidebar.selectbox("Select Currency", ["USD", "EUR", "GBP", "INR"])
 conv_factor = get_conversion_rate(currency)
 curr_symbol = currency_symbols.get(currency, "$")
-sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 
 tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Chat"])
 
-# ---------------------------
-# Dashboard Tab
-# ---------------------------
 if ticker:
+    # --- Dashboard Tab ---
     with tabs[0]:
         comp_name, comp_desc = get_company_info(ticker)
         st.subheader(comp_name)
@@ -345,9 +325,7 @@ if ticker:
         st.write("News Impact Analysis:")
         st.info(news_impact)
     
-    # ---------------------------
-    # Fetch Historical Data and Apply Currency Conversion
-    # ---------------------------
+    # Fetch historical data and apply currency conversion
     data = get_historical_data(ticker, start_date.strftime("%Y-%m-%d"),
                                end_date.strftime("%Y-%m-%d"), interval_option)
     if data.empty:
@@ -357,18 +335,15 @@ if ticker:
             if col in data.columns:
                 data[col] = data[col] * conv_factor
 
-        # ---------------------------
-        # Charts Tab
-        # ---------------------------
+        # --- Charts Tab ---
         with tabs[1]:
             chart_historical_line(data, ticker, curr_symbol)
             chart_technical_indicators(data, ticker, curr_symbol)
             chart_candlestick(data, ticker, curr_symbol)
         
-        # ---------------------------
-        # Forecast Tab
-        # ---------------------------
+        # --- Forecast Tab ---
         with tabs[2]:
+            forecast_horizon = forecast_period_mapping[forecast_period_option]
             if len(data) < sequence_length:
                 st.error("Not enough data for the specified sequence length for forecasting.")
             else:
@@ -377,10 +352,11 @@ if ticker:
                 with st.spinner("Training LSTM model..."):
                     model.fit(X, y, epochs=10, batch_size=32, verbose=0)
                 st.success("LSTM model trained!")
-                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, total_forecast_days)
-                st.write(f"Forecast for the next {total_forecast_days} day(s):")
+                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon)
+                st.write(f"Forecast for the next {forecast_period_option}:")
                 st.write(forecast_values)
-                chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
+                chart_forecast_overlay(data, forecast_values, ticker, interval_option, curr_symbol)
+                # Build forecast table for recommendation
                 freq = "B"
                 date_format = "%Y-%m-%d"
                 forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
@@ -394,21 +370,14 @@ if ticker:
                 st.write("Investment Recommendation:")
                 st.info(recommendation)
         
-        # ---------------------------
-        # Fundamentals Tab
-        # ---------------------------
+        # --- Fundamentals Tab ---
         with tabs[3]:
             st.write(f"Displaying fundamentals in {currency} ({curr_symbol}):")
             display_fundamentals(ticker, conv_factor, curr_symbol)
     
-    # ---------------------------
-    # Chat Tab
-    # ---------------------------
+    # --- Chat Tab ---
     with tabs[4]:
         st.subheader("Ask Your Investment Advisor")
-        # Clear Chat Button
-        if st.button("Clear Chat"):
-            st.session_state["chat_history"] = []
         display_chat()
         user_query = st.text_input("Enter your question:")
         if st.button("Send"):
@@ -416,4 +385,4 @@ if ticker:
                 add_chat_message("User", user_query)
                 answer = process_chat(user_query)
                 add_chat_message("Advisor", answer)
-        display_chat()
+                st.experimental_rerun()

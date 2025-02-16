@@ -16,35 +16,15 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 nltk.download('vader_lexicon', quiet=True)
 vader_analyzer = SentimentIntensityAnalyzer()
 
-# For dynamic currency conversion
-from forex_python.converter import CurrencyRates
-
 # For GPT Chat integration
 import openai
 
 # ---------------------------
-# Dynamic Currency Conversion
+# Set currency to USD (fixed)
 # ---------------------------
-def get_conversion_rate(to_currency):
-    """Fetch the latest conversion rate from USD to the target currency."""
-    c = CurrencyRates()
-    try:
-        if to_currency == "USD":
-            return 1.0
-        else:
-            rate = c.get_rate("USD", to_currency)
-            return rate
-    except Exception:
-        # If error, default to 1.0 (i.e. USD)
-        return 1.0
-
-# Currency symbols mapping
-currency_symbols = {
-    "USD": "$",
-    "EUR": "€",
-    "GBP": "£",
-    "INR": "₹"
-}
+currency = "USD"
+conv_factor = 1.0
+curr_symbol = "$"
 
 # ---------------------------
 # Custom CSS for a polished look
@@ -125,12 +105,12 @@ def build_lstm_model(input_shape):
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
 
-def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon):
+def forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_days):
     """Forecast future prices using the trained LSTM model."""
     forecast = []
     last_sequence = data_scaled[-sequence_length:]
     current_sequence = last_sequence.copy()
-    for _ in range(forecast_horizon):
+    for _ in range(forecast_days):
         current_sequence_reshaped = np.reshape(current_sequence, (1, sequence_length, 1))
         prediction = model.predict(current_sequence_reshaped)
         forecast.append(prediction[0, 0])
@@ -159,12 +139,12 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
 # ---------------------------
 # Altair Chart Functions
 # ---------------------------
-def chart_historical_line(data, ticker, curr_symbol):
+def chart_historical_line(data, ticker):
     """Line Chart for Historical Closing Prices."""
     df = data.reset_index()
     chart = alt.Chart(df).mark_line(color="#2e7bcf").encode(
         x=alt.X('Date:T', title='Date'),
-        y=alt.Y('Close:Q', title=f'Close Price ({curr_symbol})')
+        y=alt.Y('Close:Q', title='Close Price ($)')
     ).properties(
         title=f"{ticker} - Historical Closing Prices",
         width=700,
@@ -172,13 +152,13 @@ def chart_historical_line(data, ticker, curr_symbol):
     )
     st.altair_chart(chart, use_container_width=True)
 
-def chart_technical_indicators(data, ticker, curr_symbol):
+def chart_technical_indicators(data, ticker):
     """Line Chart for Technical Indicators (SMA & EMA)."""
     df = data.copy().reset_index()
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
-    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', title=f'Price ({curr_symbol})'))
+    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', title='Price ($)'))
     line_sma = base.mark_line(color='blue').encode(y='SMA_20:Q')
     line_ema = base.mark_line(color='red').encode(y='EMA_20:Q')
     chart = (line_close + line_sma + line_ema).properties(
@@ -188,7 +168,7 @@ def chart_technical_indicators(data, ticker, curr_symbol):
     )
     st.altair_chart(chart, use_container_width=True)
 
-def chart_candlestick(data, ticker, curr_symbol):
+def chart_candlestick(data, ticker):
     """Candlestick Chart."""
     df = data.reset_index()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
@@ -202,48 +182,36 @@ def chart_candlestick(data, ticker, curr_symbol):
         color=alt.condition("datum.Open <= datum.Close", alt.value("green"), alt.value("red"))
     )
     chart = (rule + bar).properties(
-        title=f"{ticker} - Candlestick Chart ({curr_symbol})",
+        title=f"{ticker} - Candlestick Chart ($)",
         width=700,
         height=400
     )
     st.altair_chart(chart, use_container_width=True)
 
-def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
+# ---------------------------
+# Forecast Table Function
+# ---------------------------
+def display_forecast_table(data, forecast, forecast_days):
     """
-    Overlay chart of historical data and forecast.
-    Also displays a forecast table.
+    Display a forecast table showing the forecast for the next 'forecast_days' days.
     """
     freq = "B"  # Business days
     date_format = "%Y-%m-%d"
-    df_hist = data.reset_index()[['Date', 'Close']]
     forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast)+1, freq=freq)[1:]
     forecast_dates = forecast_dates.strftime(date_format)
     df_forecast = pd.DataFrame({
         'Date': pd.to_datetime(forecast_dates),
         'Forecasted Price': forecast
     })
-    chart_hist = alt.Chart(df_hist).mark_line(color='black').encode(
-        x='Date:T',
-        y=alt.Y('Close:Q', title=f'Price ({curr_symbol})')
-    )
-    chart_forecast = alt.Chart(df_forecast).mark_line(color='orange').encode(
-        x='Date:T',
-        y=alt.Y('Forecasted Price:Q', title=f'Price ({curr_symbol})')
-    )
-    chart = (chart_hist + chart_forecast).properties(
-        title=f"{ticker} - Forecast Overlay",
-        width=700,
-        height=400
-    )
-    st.altair_chart(chart, use_container_width=True)
-    st.write("Forecast Table")
+    st.write("### Forecast Table")
     st.dataframe(df_forecast)
+    return df_forecast
 
 # ---------------------------
 # Fundamental Info Display
 # ---------------------------
-def display_fundamentals(ticker, conv_factor, curr_symbol):
-    """Display key stock fundamentals in the chosen currency."""
+def display_fundamentals(ticker):
+    """Display key stock fundamentals in USD."""
     stock = yf.Ticker(ticker)
     info = stock.info
     fundamentals = {
@@ -257,22 +225,9 @@ def display_fundamentals(ticker, conv_factor, curr_symbol):
     }
     for key, value in fundamentals.items():
         if isinstance(value, (int, float)):
-            fundamentals[key] = f"{curr_symbol}{round(value * conv_factor, 2)}"
+            fundamentals[key] = f"${round(value, 2)}"
     df_fund = pd.DataFrame(fundamentals, index=[ticker])
     st.dataframe(df_fund)
-
-# ---------------------------
-# Forecast Period Mapping (Dynamic)
-# ---------------------------
-# The user chooses a period type and number; these are converted to total forecast days.
-forecast_period_multiplier = {
-    "Days": 1,
-    "Weeks": 7,
-    "15 Days": 15,
-    "Months": 22,   # Approximate trading days in a month
-    "6 Months": 130, # Approximate trading days in 6 months
-    "Year": 252      # Approximate trading days in a year
-}
 
 # ---------------------------
 # Chat Option and Processing using OpenAI GPT
@@ -291,19 +246,23 @@ def display_chat():
             st.markdown(f"**Advisor:** {message}")
 
 def process_chat(query):
-    # Use OpenAI's GPT model to process the query.
-    # Make sure to set your OpenAI API key in Streamlit secrets as OPENAI_API_KEY.
-    openai.api_key = st.secrets["OPENAI_API_KEY"]
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": query}],
-            temperature=0.7
-        )
-        answer = response.choices[0].message.content
-        return answer
-    except Exception as e:
-        return "Sorry, I'm having trouble processing that query right now."
+    # Use OpenAI's GPT model if API key is available
+    api_key = st.secrets.get("OPENAI_API_KEY")
+    if api_key:
+        openai.api_key = api_key
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": query}],
+                temperature=0.7
+            )
+            answer = response.choices[0].message.content
+            return answer
+        except Exception as e:
+            return "Sorry, I'm having trouble processing that query right now."
+    else:
+        # Fallback answer if no API key is provided
+        return "OpenAI API key is not set. Please set it in the Streamlit secrets for GPT functionality."
 
 # ---------------------------
 # Sidebar Inputs and Tabs Setup
@@ -314,13 +273,7 @@ start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
 # Daily data only
 interval_option = "1d"
-forecast_period_type = st.sidebar.selectbox("Forecast Period Type", 
-                                              ["Days", "Weeks", "15 Days", "Months", "6 Months", "Year"])
-number_of_periods = st.sidebar.number_input("Number of Periods", min_value=1, value=1, step=1)
-total_forecast_days = number_of_periods * forecast_period_multiplier[forecast_period_type]
-currency = st.sidebar.selectbox("Select Currency", ["USD", "EUR", "GBP", "INR"])
-conv_factor = get_conversion_rate(currency)
-curr_symbol = currency_symbols.get(currency, "$")
+forecast_days = st.sidebar.number_input("Number of Forecast Days", min_value=1, value=5, step=1)
 sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 
 tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Chat"])
@@ -340,24 +293,20 @@ if ticker:
         st.info(news_impact)
     
     # ---------------------------
-    # Fetch Historical Data and Apply Currency Conversion
+    # Fetch Historical Data (USD only)
     # ---------------------------
     data = get_historical_data(ticker, start_date.strftime("%Y-%m-%d"),
                                end_date.strftime("%Y-%m-%d"), interval_option)
     if data.empty:
         st.error("No historical data found. Please adjust your dates or ticker.")
     else:
-        for col in ['Close', 'Open', 'High', 'Low']:
-            if col in data.columns:
-                data[col] = data[col] * conv_factor
-
         # ---------------------------
         # Charts Tab
         # ---------------------------
         with tabs[1]:
-            chart_historical_line(data, ticker, curr_symbol)
-            chart_technical_indicators(data, ticker, curr_symbol)
-            chart_candlestick(data, ticker, curr_symbol)
+            chart_historical_line(data, ticker)
+            chart_technical_indicators(data, ticker)
+            chart_candlestick(data, ticker)
         
         # ---------------------------
         # Forecast Tab
@@ -371,18 +320,10 @@ if ticker:
                 with st.spinner("Training LSTM model..."):
                     model.fit(X, y, epochs=10, batch_size=32, verbose=0)
                 st.success("LSTM model trained!")
-                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, total_forecast_days)
-                st.write(f"Forecast for the next {total_forecast_days} day(s):")
+                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_days)
+                st.write(f"Forecast for the next {forecast_days} day(s):")
                 st.write(forecast_values)
-                chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
-                freq = "B"
-                date_format = "%Y-%m-%d"
-                forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
-                forecast_dates = forecast_dates.strftime(date_format)
-                df_forecast = pd.DataFrame({
-                    'Date': forecast_dates,
-                    'Forecasted Price': forecast_values
-                })
+                df_forecast = display_forecast_table(data, forecast_values, forecast_days)
                 last_actual = float(data['Close'].iloc[-1])
                 recommendation = get_investment_recommendation(last_actual, df_forecast)
                 st.write("Investment Recommendation:")
@@ -392,8 +333,8 @@ if ticker:
         # Fundamentals Tab
         # ---------------------------
         with tabs[3]:
-            st.write(f"Displaying fundamentals in {currency} ({curr_symbol}):")
-            display_fundamentals(ticker, conv_factor, curr_symbol)
+            st.write("Displaying fundamentals in USD ($):")
+            display_fundamentals(ticker)
     
     # ---------------------------
     # Chat Tab

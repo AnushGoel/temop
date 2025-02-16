@@ -32,7 +32,7 @@ def get_conversion_rate(to_currency):
             rate = c.get_rate("USD", to_currency)
             return rate
     except Exception:
-        # If error, silently default to 1.0 (USD)
+        # If error, default to 1.0 (i.e. USD)
         return 1.0
 
 # Currency symbols mapping
@@ -44,7 +44,7 @@ currency_symbols = {
 }
 
 # ---------------------------
-# Custom CSS for polished look
+# Custom CSS for a polished look
 # ---------------------------
 st.markdown(
     """
@@ -205,12 +205,12 @@ def chart_candlestick(data, ticker, curr_symbol):
     )
     st.altair_chart(chart, use_container_width=True)
 
-def chart_forecast_overlay(data, forecast, ticker, interval, curr_symbol):
+def chart_forecast_overlay(data, forecast, ticker, curr_symbol):
     """
     Overlay chart of historical data and forecast.
     Also displays a forecast table.
     """
-    # For daily data only, use "B" frequency.
+    # Using daily (business) frequency
     freq = "B"
     date_format = "%Y-%m-%d"
     df_hist = data.reset_index()[['Date', 'Close']]
@@ -260,18 +260,20 @@ def display_fundamentals(ticker, conv_factor, curr_symbol):
     st.dataframe(df_fund)
 
 # ---------------------------
-# Forecast Period Mapping
+# Forecast Period Mapping (Dynamic)
 # ---------------------------
-forecast_period_mapping = {
-    "15 days": 15,
-    "1 week": 7,
-    "1 month": 22,
-    "6 months": 130,
-    "1 year": 252
+# The user chooses a period type and a number; these are converted to days.
+forecast_period_multiplier = {
+    "Days": 1,
+    "Weeks": 7,
+    "15 Days": 15,
+    "Months": 22,   # Approximate trading days in a month
+    "6 Months": 130, # Approximate trading days in 6 months
+    "Year": 252      # Approximate trading days in a year
 }
 
 # ---------------------------
-# Chat Option (Simple)
+# Chat Option
 # ---------------------------
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
@@ -288,7 +290,6 @@ def display_chat():
 
 def process_chat(query):
     query = query.lower()
-    # A very simple rule-based response.
     if "best stock" in query:
         response = "Based on current trends, AAPL, MSFT, and TSLA are popular choices—but always do your own research!"
     else:
@@ -302,14 +303,19 @@ st.sidebar.title("Stock Dashboard Settings")
 ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
-# Only daily data is used now.
+# Only daily data is used.
 interval_option = "1d"
-forecast_period_option = st.sidebar.selectbox("Forecast Period", list(forecast_period_mapping.keys()))
-# Use LSTM sequence length input as before.
-sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
+# Forecast period: select type and number of periods.
+forecast_period_type = st.sidebar.selectbox("Forecast Period Type", 
+                                              ["Days", "Weeks", "15 Days", "Months", "6 Months", "Year"])
+number_of_periods = st.sidebar.number_input("Number of Periods", min_value=1, value=1, step=1)
+# Calculate total forecast horizon in days.
+total_forecast_days = number_of_periods * forecast_period_multiplier[forecast_period_type]
+
 currency = st.sidebar.selectbox("Select Currency", ["USD", "EUR", "GBP", "INR"])
 conv_factor = get_conversion_rate(currency)
 curr_symbol = currency_symbols.get(currency, "$")
+sequence_length = st.sidebar.number_input("LSTM Sequence Length", min_value=10, value=60, step=1)
 
 tabs = st.tabs(["Dashboard", "Charts", "Forecast", "Fundamentals", "Chat"])
 
@@ -343,7 +349,6 @@ if ticker:
         
         # --- Forecast Tab ---
         with tabs[2]:
-            forecast_horizon = forecast_period_mapping[forecast_period_option]
             if len(data) < sequence_length:
                 st.error("Not enough data for the specified sequence length for forecasting.")
             else:
@@ -352,10 +357,10 @@ if ticker:
                 with st.spinner("Training LSTM model..."):
                     model.fit(X, y, epochs=10, batch_size=32, verbose=0)
                 st.success("LSTM model trained!")
-                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, forecast_horizon)
-                st.write(f"Forecast for the next {forecast_period_option}:")
+                forecast_values = forecast_lstm(model, data_scaled, scaler, sequence_length, total_forecast_days)
+                st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
-                chart_forecast_overlay(data, forecast_values, ticker, interval_option, curr_symbol)
+                chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
                 # Build forecast table for recommendation
                 freq = "B"
                 date_format = "%Y-%m-%d"
@@ -385,4 +390,4 @@ if ticker:
                 add_chat_message("User", user_query)
                 answer = process_chat(user_query)
                 add_chat_message("Advisor", answer)
-                st.experimental_rerun()
+        display_chat()

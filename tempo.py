@@ -42,6 +42,14 @@ st.markdown(
 # ---------------------------
 # Helper Functions
 # ---------------------------
+def ensure_date_column(df):
+    """Ensure the DataFrame has a 'Date' column in datetime format."""
+    if 'Date' not in df.columns:
+        # Rename the first column to 'Date'
+        df = df.rename(columns={df.columns[0]: 'Date'})
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
 def get_company_info(ticker):
     """Retrieve company name, description, and website (if available)."""
     try:
@@ -151,20 +159,13 @@ def get_investment_recommendation(last_actual, forecast_df, threshold=3):
 # ---------------------------
 # Altair Chart Functions
 # ---------------------------
-def ensure_date_column(df):
-    """Ensure that the DataFrame has a 'Date' column in datetime format."""
-    if 'Date' not in df.columns:
-        df = df.rename(columns={df.columns[0]: 'Date'})
-    df['Date'] = pd.to_datetime(df['Date'])
-    return df
-
 def chart_historical_line(data, ticker):
     """Line Chart for Historical Closing Prices."""
     df = data.reset_index()
     df = ensure_date_column(df)
     chart = alt.Chart(df).mark_line(color="#2e7bcf").encode(
         x=alt.X('Date:T', title='Date'),
-        y=alt.Y('Close:Q', title='Close Price ($)', format=",.2f")
+        y=alt.Y('Close:Q', axis=alt.Axis(title='Close Price ($)', format=",.2f"))
     ).properties(
         title=f"{ticker} - Historical Closing Prices",
         width=700,
@@ -179,9 +180,15 @@ def chart_technical_indicators(data, ticker):
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     base = alt.Chart(df).encode(x=alt.X('Date:T', title='Date'))
-    line_close = base.mark_line(color='black').encode(y=alt.Y('Close:Q', title='Price ($)', format=",.2f"))
-    line_sma = base.mark_line(color='blue').encode(y=alt.Y('SMA_20:Q', title='SMA 20 ($)', format=",.2f"))
-    line_ema = base.mark_line(color='red').encode(y=alt.Y('EMA_20:Q', title='EMA 20 ($)', format=",.2f"))
+    line_close = base.mark_line(color='black').encode(
+        y=alt.Y('Close:Q', axis=alt.Axis(title='Price ($)', format=",.2f"))
+    )
+    line_sma = base.mark_line(color='blue').encode(
+        y=alt.Y('SMA_20:Q', axis=alt.Axis(title='SMA 20 ($)', format=",.2f"))
+    )
+    line_ema = base.mark_line(color='red').encode(
+        y=alt.Y('EMA_20:Q', axis=alt.Axis(title='EMA 20 ($)', format=",.2f"))
+    )
     chart = (line_close + line_sma + line_ema).properties(
         title=f"{ticker} - Technical Indicators",
         width=700,
@@ -227,11 +234,11 @@ def chart_forecast_overlay(data, forecast, ticker):
     })
     chart_hist = alt.Chart(df_hist).mark_line(color='black').encode(
         x='Date:T',
-        y=alt.Y('Close:Q', title='Price ($)', format=",.2f")
+        y=alt.Y('Close:Q', axis=alt.Axis(title='Price ($)', format=",.2f"))
     )
     chart_forecast = alt.Chart(df_forecast).mark_line(color='orange').encode(
         x='Date:T',
-        y=alt.Y('Forecasted Price:Q', title='Price ($)', format=",.2f")
+        y=alt.Y('Forecasted Price:Q', axis=alt.Axis(title='Price ($)', format=",.2f"))
     )
     chart = (chart_hist + chart_forecast).properties(
         title=f"{ticker} - Forecast Overlay",

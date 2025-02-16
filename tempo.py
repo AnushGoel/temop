@@ -259,9 +259,34 @@ def display_fundamentals(ticker, conv_factor, curr_symbol):
     st.dataframe(df_fund)
 
 # ---------------------------
+# Define display_forecast_table Function
+# ---------------------------
+def display_forecast_table(data, forecast_values, forecast_days):
+    """
+    Create and return a forecast table DataFrame.
+    
+    Parameters:
+      data: Historical data with a Date index.
+      forecast_values: An array of forecasted prices.
+      forecast_days: Number of forecast days (used to generate dates).
+      
+    Returns:
+      A pandas DataFrame containing the forecast dates and forecasted prices.
+    """
+    freq = "B"  # Business days
+    date_format = "%Y-%m-%d"
+    forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
+    forecast_dates = forecast_dates.strftime(date_format)
+    
+    df_forecast = pd.DataFrame({
+        'Date': forecast_dates,
+        'Forecasted Price': forecast_values
+    })
+    return df_forecast
+
+# ---------------------------
 # Forecast Period Mapping (Dynamic)
 # ---------------------------
-# The user chooses a period type and number; these are converted to total forecast days.
 forecast_period_multiplier = {
     "Days": 1,
     "Weeks": 7,
@@ -287,7 +312,6 @@ def display_chat():
         else:
             st.markdown(f"**Advisor:** {message}")
 
-# Re-define process_chat here so it can use conv_factor and curr_symbol
 def process_chat(query):
     query = query.lower()
     if "clear chat" in query:
@@ -318,8 +342,7 @@ st.sidebar.title("Stock Dashboard Settings")
 ticker = st.sidebar.text_input("Ticker (e.g., AAPL)", "AAPL").upper().strip()
 start_date = st.sidebar.date_input("Start Date", datetime.date(2023, 1, 1))
 end_date = st.sidebar.date_input("End Date", datetime.date.today())
-# Daily data only
-interval_option = "1d"
+interval_option = "1d"  # Daily data only
 forecast_period_type = st.sidebar.selectbox("Forecast Period Type", 
                                               ["Days", "Weeks", "15 Days", "Months", "6 Months", "Year"])
 number_of_periods = st.sidebar.number_input("Number of Periods", min_value=1, value=1, step=1)
@@ -381,14 +404,9 @@ if ticker:
                 st.write(f"Forecast for the next {total_forecast_days} day(s):")
                 st.write(forecast_values)
                 chart_forecast_overlay(data, forecast_values, ticker, curr_symbol)
-                freq = "B"
-                date_format = "%Y-%m-%d"
-                forecast_dates = pd.date_range(start=data.index[-1], periods=len(forecast_values)+1, freq=freq)[1:]
-                forecast_dates = forecast_dates.strftime(date_format)
-                df_forecast = pd.DataFrame({
-                    'Date': forecast_dates,
-                    'Forecasted Price': forecast_values
-                })
+                df_forecast = display_forecast_table(data, forecast_values, total_forecast_days)
+                st.write("Forecast Table")
+                st.dataframe(df_forecast)
                 last_actual = float(data['Close'].iloc[-1])
                 recommendation = get_investment_recommendation(last_actual, df_forecast)
                 st.write("Investment Recommendation:")
@@ -406,7 +424,6 @@ if ticker:
     # ---------------------------
     with tabs[4]:
         st.subheader("Ask Your Investment Advisor")
-        # Clear Chat Button
         if st.button("Clear Chat"):
             st.session_state["chat_history"] = []
         display_chat()

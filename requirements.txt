@@ -6,4 +6,3 @@ plotly
 tensorflow
 scikit-learn
 nltk
-transformers
